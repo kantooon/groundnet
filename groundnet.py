@@ -36,7 +36,7 @@ class Groundnet:
 		self.scenery_airports="/home/adrian/games/fgfs/terrasync/Airports/" # path to Airports directory inside scenery dir
 		self.save_tree=True   # true if the generated files should be saved in a tree structure similar to the scenery one
 		self.park_spacing=60  # space in meters between centers of parking positions
-		
+		self.park_distance=50 # space in meters between taxiway and parking pos. 
 		self.default_airports=[]
 		self.missing_network=[]
 		self.done_files=[]
@@ -70,9 +70,6 @@ class Groundnet:
 		print "Airports with missing network:",len(self.missing_network), "Airports with known format:",len(self.default_airports)
 		hh=0
 		
-		fr=open(os.path.join(os.getcwd(),'apt.dat'),'rb')
-		self.apt_content = fr.readlines()
-		fr.close()
 		q=multiprocessing.Queue(10)
 		for a in self.apts:
 			hh+=1
@@ -80,14 +77,23 @@ class Groundnet:
 			#self.parse_airport( a)
 			
 			q.put(hh)	
-			pthread=Parser(a,self.save_tree,self.park_spacing,self.apt_content,q,hh)
+			pthread=Parser(a,self.save_tree,self.park_spacing,self.park_distance,self.apt_content,q,hh)
 			pthread.start()
 			
+			
+	def parse_airport(self,a):
+		q=multiprocessing.Queue(2)
+		hh=1
+		print apt
+		q.put(hh)
+		pthread=Parser(a,self.save_tree,self.park_spacing,self.park_distance,self.apt_content,q,hh)
+		pthread.start()
 
 
 	def load_apt(self):
 		fr=open(os.path.join(os.getcwd(),'apt.dat'),'rb')
 		content=fr.readlines()
+		self.apt_content=content
 		fr.close()
 		i=0
 		for line in content:
@@ -144,7 +150,7 @@ class Groundnet:
 		
 class Parser(multiprocessing.Process):
 	
-	def __init__(self,apt,tree,park_spacing,content,q,hh):
+	def __init__(self,apt,tree,park_spacing,park_distance,content,q,hh):
 		multiprocessing.Process.__init__(self)
 		self.apt=apt
 		self.save_tree=tree
@@ -152,6 +158,7 @@ class Parser(multiprocessing.Process):
 		self.apt_content=content
 		self.q=q
 		self.ids=hh
+		self.park_distance=park_distance
 		
 	
 	def run(self):
@@ -248,7 +255,7 @@ class Parser(multiprocessing.Process):
 					lon2=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading))*math.sin(length_rad)/math.cos(math.radians(lat2))) + math.pi,2*math.pi)-math.pi)
 					lat2_end=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading_back))))
 					lon2_end=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading_back))*math.sin(length_rad)/math.cos(math.radians(lat2_end))) + math.pi,2*math.pi)-math.pi)
-					length_rad2=50 * METER_TO_NM * NM_TO_RAD
+					length_rad2=self.park_distance * METER_TO_NM * NM_TO_RAD
 					heading2=heading+90
 					
 					if(heading2>=360):

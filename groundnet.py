@@ -18,7 +18,7 @@
 
 
 import os, sys, glob, math
-import io, threading
+import io, threading, multiprocessing
 import re, string 
 
 __doc__="""Experimental script to generate a ground network for default airports
@@ -34,7 +34,7 @@ groundnet.py airport <ICAO> generates only one airport for the ICAO code provide
 class Groundnet:
 	def __init__(self):
 		self.scenery_airports="/home/adrian/games/fgfs/terrasync/Airports/" # path to Airports directory inside scenery dir
-		self.save_tree=False   # true if the generated files should be saved in a tree structure similar to the scenery one
+		self.save_tree=True   # true if the generated files should be saved in a tree structure similar to the scenery one
 		self.park_spacing=60  # space in meters between centers of parking positions
 		
 		self.default_airports=[]
@@ -64,31 +64,24 @@ class Groundnet:
 			self.missing_network.append(line.rstrip('\n'))
 		fr.close()
 		
-			 
+	
 	def parse_all(self):
 		print "Airports to be processed:",len(self.apts)
 		print "Airports with missing network:",len(self.missing_network), "Airports with known format:",len(self.default_airports)
 		hh=0
-		threads=[]
+		
 		fr=open(os.path.join(os.getcwd(),'apt.dat'),'rb')
 		self.apt_content = fr.readlines()
 		fr.close()
-		lck=threading.Lock()
+		q=multiprocessing.Queue(10)
 		for a in self.apts:
 			hh+=1
 			print a, len(self.apts) - hh
 			#self.parse_airport( a)
 			
-			if len(threads)>10:
-				t=threads[0]
-				t.join()
-			pthread=Parser(a,self.save_tree,self.park_spacing,self.apt_content,lck,threads)
-			lck.acquire()
-			if pthread not in threads:
-				threads.append(pthread)
-			lck.release()
+			q.put(hh)	
+			pthread=Parser(a,self.save_tree,self.park_spacing,self.apt_content,q,hh)
 			pthread.start()
-			
 			
 
 
@@ -149,24 +142,22 @@ class Groundnet:
 						self.missing_network.append(tokens[0])
 	
 		
-class Parser(threading.Thread):
+class Parser(multiprocessing.Process):
 	
-	def __init__(self,apt,tree,park_spacing,content,lck,threads):
-		threading.Thread.__init__(self)
+	def __init__(self,apt,tree,park_spacing,content,q,hh):
+		multiprocessing.Process.__init__(self)
 		self.apt=apt
 		self.save_tree=tree
 		self.park_spacing=park_spacing
 		self.apt_content=content
-		self.threads=threads
-		self.lck=lck
+		self.q=q
+		self.ids=hh
 		
 	
 	def run(self):
 		self.parse_airport(self.apt)
-		print "done parsing "+ self.apt	
-		self.lck.acquire()
-		self.threads.remove(self)
-		self.lck.release()
+		self.q.get(self.ids)
+		
 		
 	def parse_airport(self,apt):
 		xml=[]
@@ -375,7 +366,10 @@ class Parser(threading.Thread):
 				print "Airport ICAO has "+len(apt)+" letters, skipping"
 				return
 			if os.path.exists(dir_path)==False:
-				os.makedirs(dir_path,0755)
+				try:
+					os.makedirs(dir_path,0755)
+				except:
+					pass
 		else:
 			dir_path=os.path.join(os.getcwd(),'output')
 		path=os.path.join(dir_path,apt+'.groundnet.xml')

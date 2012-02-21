@@ -18,7 +18,7 @@
 
 
 import os, sys, glob, math
-import io, threading, multiprocessing
+import io, multiprocessing
 import re, string 
 
 __doc__="""Experimental script to generate a ground network for default airports
@@ -27,8 +27,9 @@ one long taxiway along the runway, 3 short taxiways to the ends and the center
 of the runway. 9 parking positions are also generated near the long taxiway.
 First set path below to Airports directory inside the scenery directory.
 Ground networks will be saved in the output directory inside the current directory
-Usage: groundnet.py all generates all airports which fit the criteria
-groundnet.py airport <ICAO> generates only one airport for the ICAO code provided
+
+Usage: groundnet.py all -> generates all airports which fit the criteria
+groundnet.py airport <ICAO> -> generates only one airport for the ICAO code provided
 """
 
 class Groundnet:

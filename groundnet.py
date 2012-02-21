@@ -73,19 +73,21 @@ class Groundnet:
 		fr=open(os.path.join(os.getcwd(),'apt.dat'),'rb')
 		self.apt_content = fr.readlines()
 		fr.close()
+		lck=threading.Lock()
 		for a in self.apts:
 			hh+=1
 			print a, len(self.apts) - hh
-			self.parse_airport( a)
-			"""
+			#self.parse_airport( a)
+			
 			if len(threads)>10:
 				t=threads[0]
 				t.join()
-				threads.remove(t)
-			pthread=Parser(a,self.save_tree,self.park_spacing,self.apt_content)
+			pthread=Parser(a,self.save_tree,self.park_spacing,self.apt_content,lck,threads)
+			lck.acquire()
 			if pthread not in threads:
 				threads.append(pthread)
-			pthread.start()"""
+			lck.release()
+			pthread.start()
 			
 			
 
@@ -146,20 +148,25 @@ class Groundnet:
 					if tokens[0] not in self.missing_network:
 						self.missing_network.append(tokens[0])
 	
-		"""
+		
 class Parser(threading.Thread):
 	
-	def __init__(self,apt,tree,park_spacing,content):
+	def __init__(self,apt,tree,park_spacing,content,lck,threads):
 		threading.Thread.__init__(self)
 		self.apt=apt
 		self.save_tree=tree
 		self.park_spacing=park_spacing
 		self.apt_content=content
+		self.threads=threads
+		self.lck=lck
 		
 	
 	def run(self):
 		self.parse_airport(self.apt)
-		print "done parsing "+ self.apt	"""
+		print "done parsing "+ self.apt	
+		self.lck.acquire()
+		self.threads.remove(self)
+		self.lck.release()
 		
 	def parse_airport(self,apt):
 		xml=[]

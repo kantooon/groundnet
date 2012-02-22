@@ -33,15 +33,19 @@ groundnet.py airport <ICAO> -> generates only one airport for the ICAO code prov
 """
 
 class Groundnet:
-	def __init__(self):
+	def __init__(self,version=810):
 		self.scenery_airports="/home/adrian/games/fgfs/terrasync/Airports/" # path to Airports directory inside scenery dir
-		self.save_tree=True   # true if the generated files should be saved in a tree structure similar to the scenery one
+		self.save_tree=False   # true if the generated files should be saved in a tree structure similar to the scenery one
 		self.park_spacing=60  # space in meters between centers of parking positions
 		self.park_distance=50 # space in meters between taxiway and parking pos. 
 		self.default_airports=[]
 		self.missing_network=[]
 		self.done_files=[]
-		self.load_apt()
+		self.version=version
+		if self.version==850:
+			self.load_apt_850()
+		else:
+			self.load_apt()
 		self.check_already_done()
 		self.get_airport_list()
 		
@@ -115,13 +119,52 @@ class Groundnet:
 							if match.group(1) not in self.default_airports:
 								self.default_airports.append(match.group(1))
 			i+=1
+			
+	
+	def load_apt_850(self):
+		fr=open(os.path.join(os.getcwd(),'apt850.dat'),'rb')
+		content=fr.readlines()
+		self.apt_content=content
+		fr.close()
+		i=0
+		for line in content:
+			if re.search("^1\s+",line)!=None:
+				num_segs=0
+				num_taxiways=0
+				num_bezier=0
+				num_holds=0
+				seg_len=[]
+				for k in range(i+1,i+40):
+					if content[k]=='\n':
+						break
+					if re.search("^110\s+",content[k])!=None:
+						num_taxiways +=1
+					if re.search("^112\s+",content[k])!=None:
+						num_bezier +=1
+					if re.search("^120\s+",content[k])!=None:
+						num_holds +=1
+					if re.search("^111\s+",content[k])!=None:
+						data=content[k].split()
+						#seg_len.append(data[5])
+						num_segs +=1
+				if num_segs==14 and num_taxiways==1 and num_bezier==4 and num_holds==3:
+					#if seg_len[0]==seg_len[1] and seg_len[0]==seg_len[2] and float(seg_len[0])<float(seg_len[3]) and float(seg_len[3])>=2000:
+					match=re.search("^1\s+[0-9]+\s+[0-9]+\s+[0-9]+\s+([0-9A-Z]{3,5})\s+",line)
+					if match!=None:
+						if match.group(1) not in self.default_airports:
+							self.default_airports.append(match.group(1))
+			i+=1
 		
 		
 	def check_already_done(self):
-		if self.save_tree==False:
-			done_files1=glob.glob(os.path.join(os.getcwd(),'output','*.xml'))
+		if self.version==850:
+			output_dir='output850'
 		else:
-			done_files1=glob.glob(os.path.join(os.getcwd(),'output','Airports','*','*','*','*.xml'))
+			output_dir='output'
+		if self.save_tree==False:
+			done_files1=glob.glob(os.path.join(os.getcwd(),output_dir,'*.xml'))
+		else:
+			done_files1=glob.glob(os.path.join(os.getcwd(),output_dir,'Airports','*','*','*','*.xml'))
 			
 		for d in done_files1:
 			icao1=d.split('.')
@@ -363,13 +406,213 @@ class Parser(multiprocessing.Process):
 		
 		self.save_network(apt,xml)
 		
+	
+	def parse_airport_850(self,apt):
+		xml=[]
+		xml.append('<?xml version="1.0"?>\n<groundnet>\n<version>1</version>\n<frequencies>\n')
+		content=self.apt_content
+		i=0
+		line_data=[]
+		freq_data=[]
 		
-	def save_network(self,apt,xml):
+		for line in content:
+			if re.search("^1\s+[0-9]{1,7}\s+[0-9]{1}\s+[0-9]{1}\s+"+apt+"\s+",line)!=None:
+				for k in range(i+1,i+40):
+					if content[k]=='\n':
+						break
+					if re.search("^(111)|(112)|(113)|(115)\s+",content[k])!=None:
+						line_data.append(content[k])
+				for z in range(i+4,i+40):
+					if content[z]=='\n':
+						break
+					if re.search("^5[0-9]{1}\s+([0-9]{5})\s+",content[z])!=None:
+						freq_data.append(content[z])
+			i+=1
+			
+		
+		for ln in freq_data:
+			freq=ln.split()
+			if freq[0]=='50':
+				xml.append('\t<AWOS>'+freq[1]+'</AWOS>\n')
+			if freq[0]=='51':
+				xml.append('\t<UNICOM>'+freq[1]+'</UNICOM>\n')
+			if freq[0]=='52':
+				xml.append('\t<CLEARANCE>'+freq[1]+'</CLEARANCE>\n')
+			if freq[0]=='53':
+				xml.append('\t<GROUND>'+freq[1]+'</GROUND>\n')
+			if freq[0]=='54':
+				xml.append('\t<TOWER>'+freq[1]+'</TOWER>\n')
+			if freq[0]=='55':
+				xml.append('\t<APPROACH>'+freq[1]+'</APPROACH>\n')
+			if freq[0]=='56':
+				xml.append('\t<APPROACH>'+freq[1]+'</APPROACH>\n')
+				
+		xml.append('</frequencies>\n')
+		nodes=[]
+		subnodes=[]
+		park=[]
+		tt=0
+		index=8
+		
+		for line in line_data:
+			tt+=1
+			METER_TO_NM=0.0005399568034557235
+			NM_TO_RAD=0.00029088820866572159
+			FEET_TO_METER=0.3048
+			tokens = line.split()
+			lat = float(tokens[1])
+			lon = float(tokens[2])
+			heading = float(tokens[4])
+			heading_back=heading+180.0
+			if heading_back>=360.0:
+				heading_back=heading_back-360.0
+			length = float(tokens[5]) * FEET_TO_METER / 2
+			width = float(tokens[7])
+			# lat=asin(sin(lat1)*cos(d)+cos(lat1)*sin(d)*cos(tc))
+			#lon=mod(lon1-asin(sin(tc)*sin(d)/cos(lat))+pi,2*pi)-pi
+			
+			length_rad= length * METER_TO_NM * NM_TO_RAD
+			
+			lat1=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading))))
+			lon1=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading))*math.sin(length_rad)/math.cos(math.radians(lat1))) + math.pi,2*math.pi)-math.pi)
+			
+			lat_end=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading_back))))
+			lon_end=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading_back))*math.sin(length_rad)/math.cos(math.radians(lat_end))) + math.pi,2*math.pi)-math.pi)
+			
+			index+=1
+			nodes.append((lat1,lon_end,index))
+			index+=1
+			nodes.append((lat,lon,index))
+			index+=1
+			nodes.append((lat_end,lon1,index))
+			#print lat,lat1,lat_end,lon,lon1,lon_end
+			
+			if length > 300:
+				xml.append('<parkingList>')
+				yy=0
+				for i in range(1,10):
+					length_rad= self.park_spacing * i * METER_TO_NM * NM_TO_RAD
+					lat2=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading))))
+					lon2=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading))*math.sin(length_rad)/math.cos(math.radians(lat2))) + math.pi,2*math.pi)-math.pi)
+					lat2_end=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading_back))))
+					lon2_end=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading_back))*math.sin(length_rad)/math.cos(math.radians(lat2_end))) + math.pi,2*math.pi)-math.pi)
+					length_rad2=self.park_distance * METER_TO_NM * NM_TO_RAD
+					heading2=heading+90
+					
+					if(heading2>=360):
+						heading2=heading2-360
+						
+					heading2_back=heading2 +180
+					if heading2_back >=360:
+						heading2_back=heading2_back-360
+						
+					lat3=math.degrees(math.asin(math.sin(math.radians(lat2))*math.cos(length_rad2)+math.cos(math.radians(lat2))*math.sin(length_rad2)*math.cos(math.radians(heading2))))
+					lon3=math.degrees(math.fmod(math.radians(lon2_end)-math.asin(math.sin(math.radians(heading2))*math.sin(length_rad2)/math.cos(math.radians(lat3))) + math.pi,2*math.pi)-math.pi)
+					
+					lat3_end=math.degrees(math.asin(math.sin(math.radians(lat2))*math.cos(length_rad2)+math.cos(math.radians(lat2))*math.sin(length_rad2)*math.cos(math.radians(heading2_back))))
+					lon3_end=math.degrees(math.fmod(math.radians(lon2_end)-math.asin(math.sin(math.radians(heading2_back))*math.sin(length_rad2)/math.cos(math.radians(lat3_end))) + math.pi,2*math.pi)-math.pi)
+					
+					xml.append(self.gen_parking(lat3,lon3_end,yy,heading2_back))
+					park.append((lat3,lon3,yy))
+					index+=1
+					subnodes.append((lat2,lon2_end,index))
+					yy+=1
+					
+					
+				xml.append('\n</parkingList>\n')
+			
+			
+		xml.append('<TaxiNodes>\n')
+		#print len(nodes)
+		#print len(subnodes)
+		#print len(park)
+		for n in nodes:
+			coord=self.convert_coord(n[0],n[1])
+			onrunway='0'
+			hold='none'
+			if n[2]==11 or n[2]==14 or n[2]==17:
+				onrunway='1'
+			if n[2]==10 or n[2]==13 or n[2]==16:
+				hold='normal'
+				
+			xml.append('\t<node index="'+str(n[2])+'" lat="'+coord[0]+'" lon="'+coord[1]+'" isOnRunway="'+onrunway+'" holdPointType="'+hold+'" />\n')
+			
+			
+		for n in subnodes:
+			coord=self.convert_coord(n[0],n[1])
+			xml.append('\t<node index="'+str(n[2])+'" lat="'+coord[0]+'" lon="'+coord[1]+'" isOnRunway="0" holdPointType="none" />\n')
+			
+		
+		xml.append('</TaxiNodes>\n<TaxiWaySegments>\n')
+		
+		qq=0
+		for p in park:
+			xml.append('\t<arc begin="'+str(p[2])+'" end="'+str(subnodes[qq][2])+'" isPushBackRoute="0" name="" />\n')
+			xml.append('\t<arc begin="'+str(subnodes[qq][2])+'" end="'+str(p[2])+'" isPushBackRoute="0" name="" />\n')
+			qq+=1
+		
+		xml.append('\t<arc begin="'+str(nodes[0][2])+'" end="'+str(nodes[1][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[1][2])+'" end="'+str(nodes[0][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[1][2])+'" end="'+str(nodes[2][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[2][2])+'" end="'+str(nodes[1][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[0][2])+'" end="'+str(nodes[11][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[11][2])+'" end="'+str(nodes[0][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[11][2])+'" end="'+str(nodes[10][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[10][2])+'" end="'+str(nodes[11][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[10][2])+'" end="'+str(subnodes[0][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(subnodes[0][2])+'" end="'+str(nodes[10][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		pp=0
+		for s  in subnodes:
+			if pp > len(subnodes)-2:
+				break
+			xml.append('\t<arc begin="'+str(s[2])+'" end="'+str(subnodes[pp+1][2])+'" isPushBackRoute="0" name="" />\n')
+			xml.append('\t<arc begin="'+str(subnodes[pp+1][2])+'" end="'+str(s[2])+'" isPushBackRoute="0" name="" />\n')
+			pp+=1
+		
+		
+		
+		xml.append('\t<arc begin="'+str(nodes[9][2])+'" end="'+str(subnodes[-1][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(subnodes[-1][2])+'" end="'+str(nodes[9][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[10][2])+'" end="'+str(nodes[3][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[3][2])+'" end="'+str(nodes[10][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[3][2])+'" end="'+str(nodes[4][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[4][2])+'" end="'+str(nodes[3][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[4][2])+'" end="'+str(nodes[5][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[5][2])+'" end="'+str(nodes[4][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[6][2])+'" end="'+str(nodes[9][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[9][2])+'" end="'+str(nodes[6][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[6][2])+'" end="'+str(nodes[7][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[7][2])+'" end="'+str(nodes[6][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		xml.append('\t<arc begin="'+str(nodes[7][2])+'" end="'+str(nodes[8][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(nodes[8][2])+'" end="'+str(nodes[7][2])+'" isPushBackRoute="0" name="" />\n')
+		
+		
+		
+		xml.append('</TaxiWaySegments>\n</groundnet>\n')
+		
+		self.save_network(apt,xml,850)
+
+
+	def save_network(self,apt,xml,version=810):
 		buf="".join(xml)
 		dir_path=''
+		output_dir='output'
+		if version==850:
+			output_dir='output850'
 		if self.save_tree==True:
 			if len(apt)==4 or len(apt)==3:
-				dir_path=os.path.join(os.getcwd(),'output','Airports',apt[0],apt[1],apt[2])
+				dir_path=os.path.join(os.getcwd(),output_dir,'Airports',apt[0],apt[1],apt[2])
 			else:
 				print "Airport ICAO has "+len(apt)+" letters, skipping"
 				return
@@ -379,7 +622,7 @@ class Parser(multiprocessing.Process):
 				except:
 					pass
 		else:
-			dir_path=os.path.join(os.getcwd(),'output')
+			dir_path=os.path.join(os.getcwd(),output_dir)
 		path=os.path.join(dir_path,apt+'.groundnet.xml')
 		fw=open(path,'wb')
 		fw.write(buf)
@@ -442,6 +685,8 @@ if __name__ == "__main__":
 				apt=sys.argv[2]
 				parser.parse_airport(apt)
 		elif sys.argv[1]=='all':
+			if len(sys.argv) == 3:
+				parser=Groundnet(850)
 			parser.parse_all()
 		else:
 			print 'Usage: groundnet.py all | airport <ICAO>'

@@ -35,7 +35,7 @@ groundnet.py airport <ICAO> -> generates only one airport for the ICAO code prov
 class Groundnet:
 	def __init__(self,version=810):
 		self.scenery_airports="/home/adrian/games/fgfs/terrasync/Airports/" # path to Airports directory inside scenery dir
-		self.save_tree=False   # true if the generated files should be saved in a tree structure similar to the scenery one
+		self.save_tree=True   # true if the generated files should be saved in a tree structure similar to the scenery one
 		self.park_spacing=60  # space in meters between centers of parking positions
 		self.park_distance=50 # space in meters between taxiway and parking pos. 
 		self.default_airports=[]
@@ -434,7 +434,13 @@ class Parser(multiprocessing.Process):
 				for k in range(i+1,i+40):
 					if content[k]=='\n' or content[k]=='\r\n':
 						break
-					if re.search("^(111)|(112)|(113)|(115)\s+",content[k])!=None:
+					if re.search("^111\s+",content[k])!=None:
+						line_data.append(content[k])
+					if re.search("^112\s+",content[k])!=None:
+						line_data.append(content[k])
+					if re.search("^113\s+",content[k])!=None:
+						line_data.append(content[k])
+					if re.search("^115\s+",content[k])!=None:
 						line_data.append(content[k])
 					if re.search("^110\s+[0-9.]+\s+[0-9.]+\s+([0-9.]+)\s+",content[k])!=None:
 						tok=content[k].split()
@@ -478,6 +484,8 @@ class Parser(multiprocessing.Process):
 			FEET_TO_METER=0.3048
 			tokens = line.split()
 			lat = float(tokens[1])
+			if tokens[2]=='ASOS':
+				print "error: ", apt
 			lon = float(tokens[2])
 			node_type = int(tokens[0])
 			
@@ -714,6 +722,8 @@ if __name__ == "__main__":
 		elif sys.argv[1]=='all':
 			if len(sys.argv) == 3 and sys.argv[2]== '850':
 				parser=Groundnet(850)
+			else:
+				parser=Groundnet()
 			parser.parse_all()
 		else:
 			print 'Usage: groundnet.py all | airport <ICAO>'

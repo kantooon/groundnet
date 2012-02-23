@@ -91,7 +91,7 @@ class Groundnet:
 		hh=1
 		print apt
 		q.put(hh)
-		pthread=Parser(a,self.save_tree,self.park_spacing,self.park_distance,self.apt_content,q,hh)
+		pthread=Parser(a,self.save_tree,self.park_spacing,self.park_distance,self.apt_content,self.version,q,hh)
 		pthread.start()
 
 
@@ -194,7 +194,7 @@ class Groundnet:
 		
 class Parser(multiprocessing.Process):
 	
-	def __init__(self,apt,tree,park_spacing,park_distance,content,q,hh):
+	def __init__(self,apt,tree,park_spacing,park_distance,content,version,q,hh):
 		multiprocessing.Process.__init__(self)
 		self.apt=apt
 		self.save_tree=tree
@@ -203,13 +203,17 @@ class Parser(multiprocessing.Process):
 		self.q=q
 		self.ids=hh
 		self.park_distance=park_distance
+		self.version=version
 		
 	
 	def run(self):
-		self.parse_airport(self.apt)
+		if self.version == 850:
+			self.parse_airport_850(self.apt)
+		else:
+			self.parse_airport(self.apt)
 		self.q.get(self.ids)
 		
-		
+	########## 810 #############	
 	def parse_airport(self,apt):
 		xml=[]
 		xml.append('<?xml version="1.0"?>\n<groundnet>\n<version>1</version>\n<frequencies>\n')
@@ -221,7 +225,7 @@ class Parser(multiprocessing.Process):
 		for line in content:
 			if re.search("^1\s+[0-9]{1,7}\s+[0-9]{1}\s+[0-9]{1}\s+"+apt+"\s+",line)!=None:
 				for k in range(i+1,i+15):
-					if content[k]=='\n':
+					if content[k]=='\n' or content[k]=='\r\n':
 						break
 					if re.search("^10\s+.*?xxx\s+",content[k])!=None:
 						line_data.append(content[k])
@@ -406,7 +410,7 @@ class Parser(multiprocessing.Process):
 		
 		self.save_network(apt,xml)
 		
-	
+	################ 850 #################
 	def parse_airport_850(self,apt):
 		xml=[]
 		xml.append('<?xml version="1.0"?>\n<groundnet>\n<version>1</version>\n<frequencies>\n')
@@ -414,14 +418,18 @@ class Parser(multiprocessing.Process):
 		i=0
 		line_data=[]
 		freq_data=[]
+		heading=0
 		
 		for line in content:
 			if re.search("^1\s+[0-9]{1,7}\s+[0-9]{1}\s+[0-9]{1}\s+"+apt+"\s+",line)!=None:
 				for k in range(i+1,i+40):
-					if content[k]=='\n':
+					if content[k]=='\n' or content[k]=='\r\n':
 						break
 					if re.search("^(111)|(112)|(113)|(115)\s+",content[k])!=None:
 						line_data.append(content[k])
+					if re.search("^110\s+[0-9.]+\s+[0-9.]+\s+([0-9.]+)\s+",content[k])!=None:
+						tok=content[k].split()
+						heading=float(tok[3])
 				for z in range(i+4,i+40):
 					if content[z]=='\n':
 						break
@@ -462,77 +470,80 @@ class Parser(multiprocessing.Process):
 			tokens = line.split()
 			lat = float(tokens[1])
 			lon = float(tokens[2])
-			heading = float(tokens[4])
-			heading_back=heading+180.0
-			if heading_back>=360.0:
-				heading_back=heading_back-360.0
-			length = float(tokens[5]) * FEET_TO_METER / 2
-			width = float(tokens[7])
-			# lat=asin(sin(lat1)*cos(d)+cos(lat1)*sin(d)*cos(tc))
-			#lon=mod(lon1-asin(sin(tc)*sin(d)/cos(lat))+pi,2*pi)-pi
+			node_type = int(tokens[0])
 			
-			length_rad= length * METER_TO_NM * NM_TO_RAD
-			
-			lat1=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading))))
-			lon1=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading))*math.sin(length_rad)/math.cos(math.radians(lat1))) + math.pi,2*math.pi)-math.pi)
-			
-			lat_end=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading_back))))
-			lon_end=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading_back))*math.sin(length_rad)/math.cos(math.radians(lat_end))) + math.pi,2*math.pi)-math.pi)
-			
-			index+=1
-			nodes.append((lat1,lon_end,index))
-			index+=1
 			nodes.append((lat,lon,index))
-			index+=1
-			nodes.append((lat_end,lon1,index))
-			#print lat,lat1,lat_end,lon,lon1,lon_end
+		
+		center1=self.find_midpoint(nodes[8][0],nodes[11][0],nodes[8][1],nodes[11][1],0)
+		center2=self.find_midpoint(nodes[1][0],nodes[2][0],nodes[1][1],nodes[2][1],0)
+		
+		
+		newnodes=[]
+		newnodes.append(self.find_midpoint(nodes[0][0],nodes[15][0],nodes[0][1],nodes[15][1],9))
+		newnodes.append(self.find_midpoint(nodes[16][0],nodes[17][0],nodes[16][1],nodes[17][1],10))
+		newnodes.append(self.find_midpoint(nodes[1][0],nodes[12][0],nodes[1][1],nodes[12][1],11))
+		newnodes.append(self.find_midpoint(center1[0],center2[0],center1[1],center2[1],12))
+		newnodes.append(self.find_midpoint(nodes[2][0],nodes[7][0],nodes[2][1],nodes[7][1],13))
+		newnodes.append(self.find_midpoint(nodes[20][0],nodes[21][0],nodes[20][1],nodes[21][1],14))
+		newnodes.append(self.find_midpoint(nodes[3][0],nodes[4][0],nodes[3][1],nodes[4][1],15))
+		newnodes.append(self.find_midpoint(nodes[18][0],nodes[19][0],nodes[18][1],nodes[19][1],16))
+		newnodes.append(self.find_midpoint(nodes[9][0],nodes[10][0],nodes[9][1],nodes[10][1],17))
 			
-			if length > 300:
-				xml.append('<parkingList>')
-				yy=0
-				for i in range(1,10):
-					length_rad= self.park_spacing * i * METER_TO_NM * NM_TO_RAD
-					lat2=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading))))
-					lon2=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading))*math.sin(length_rad)/math.cos(math.radians(lat2))) + math.pi,2*math.pi)-math.pi)
-					lat2_end=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading_back))))
-					lon2_end=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading_back))*math.sin(length_rad)/math.cos(math.radians(lat2_end))) + math.pi,2*math.pi)-math.pi)
-					length_rad2=self.park_distance * METER_TO_NM * NM_TO_RAD
-					heading2=heading+90
-					
-					if(heading2>=360):
-						heading2=heading2-360
-						
-					heading2_back=heading2 +180
-					if heading2_back >=360:
-						heading2_back=heading2_back-360
-						
-					lat3=math.degrees(math.asin(math.sin(math.radians(lat2))*math.cos(length_rad2)+math.cos(math.radians(lat2))*math.sin(length_rad2)*math.cos(math.radians(heading2))))
-					lon3=math.degrees(math.fmod(math.radians(lon2_end)-math.asin(math.sin(math.radians(heading2))*math.sin(length_rad2)/math.cos(math.radians(lat3))) + math.pi,2*math.pi)-math.pi)
-					
-					lat3_end=math.degrees(math.asin(math.sin(math.radians(lat2))*math.cos(length_rad2)+math.cos(math.radians(lat2))*math.sin(length_rad2)*math.cos(math.radians(heading2_back))))
-					lon3_end=math.degrees(math.fmod(math.radians(lon2_end)-math.asin(math.sin(math.radians(heading2_back))*math.sin(length_rad2)/math.cos(math.radians(lat3_end))) + math.pi,2*math.pi)-math.pi)
-					
-					xml.append(self.gen_parking(lat3,lon3_end,yy,heading2_back))
-					park.append((lat3,lon3,yy))
-					index+=1
-					subnodes.append((lat2,lon2_end,index))
-					yy+=1
-					
-					
-				xml.append('\n</parkingList>\n')
+		
+		heading_back=heading+180.0
+		if heading_back>=360.0:
+			heading_back=heading_back-360.0
+		lat=newnodes[2][0]
+		lon=newnodes[2][1]
+		index=17
+		xml.append('<parkingList>')
+		yy=0
+		for i in range(1,10):
+			length_rad= self.park_spacing * i * METER_TO_NM * NM_TO_RAD
+			lat2=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading))))
+			lon2=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading))*math.sin(length_rad)/math.cos(math.radians(lat2))) + math.pi,2*math.pi)-math.pi)
+			lat2_end=math.degrees(math.asin(math.sin(math.radians(lat))*math.cos(length_rad)+math.cos(math.radians(lat))*math.sin(length_rad)*math.cos(math.radians(heading_back))))
+			lon2_end=math.degrees(math.fmod(math.radians(lon)-math.asin(math.sin(math.radians(heading_back))*math.sin(length_rad)/math.cos(math.radians(lat2_end))) + math.pi,2*math.pi)-math.pi)
+			length_rad2=self.park_distance * METER_TO_NM * NM_TO_RAD
+			heading2=heading+90
+			
+			if(heading2>=360):
+				heading2=heading2-360
+				
+			heading2_back=heading2 +180
+			if heading2_back >=360:
+				heading2_back=heading2_back-360
+				
+			lat3=math.degrees(math.asin(math.sin(math.radians(lat2))*math.cos(length_rad2)+math.cos(math.radians(lat2))*math.sin(length_rad2)*math.cos(math.radians(heading2))))
+			lon3=math.degrees(math.fmod(math.radians(lon2_end)-math.asin(math.sin(math.radians(heading2))*math.sin(length_rad2)/math.cos(math.radians(lat3))) + math.pi,2*math.pi)-math.pi)
+			
+			lat3_end=math.degrees(math.asin(math.sin(math.radians(lat2))*math.cos(length_rad2)+math.cos(math.radians(lat2))*math.sin(length_rad2)*math.cos(math.radians(heading2_back))))
+			lon3_end=math.degrees(math.fmod(math.radians(lon2_end)-math.asin(math.sin(math.radians(heading2_back))*math.sin(length_rad2)/math.cos(math.radians(lat3_end))) + math.pi,2*math.pi)-math.pi)
+			
+			xml.append(self.gen_parking(lat3,lon3_end,yy,heading2_back))
+			park.append((lat3,lon3,yy))
+			index+=1
+			subnodes.append((lat2,lon2_end,index))
+			yy+=1
+			
+			
+		xml.append('\n</parkingList>\n')
 			
 			
 		xml.append('<TaxiNodes>\n')
 		#print len(nodes)
 		#print len(subnodes)
 		#print len(park)
-		for n in nodes:
+		
+		
+		
+		for n in newnodes:
 			coord=self.convert_coord(n[0],n[1])
 			onrunway='0'
 			hold='none'
-			if n[2]==11 or n[2]==14 or n[2]==17:
+			if n[2]==9 or n[2]==15 or n[2]==17:
 				onrunway='1'
-			if n[2]==10 or n[2]==13 or n[2]==16:
+			if n[2]==10 or n[2]==14 or n[2]==16:
 				hold='normal'
 				
 			xml.append('\t<node index="'+str(n[2])+'" lat="'+coord[0]+'" lon="'+coord[1]+'" isOnRunway="'+onrunway+'" holdPointType="'+hold+'" />\n')
@@ -551,20 +562,14 @@ class Parser(multiprocessing.Process):
 			xml.append('\t<arc begin="'+str(subnodes[qq][2])+'" end="'+str(p[2])+'" isPushBackRoute="0" name="" />\n')
 			qq+=1
 		
-		xml.append('\t<arc begin="'+str(nodes[0][2])+'" end="'+str(nodes[1][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[1][2])+'" end="'+str(nodes[0][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[0][2])+'" end="'+str(newnodes[1][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[1][2])+'" end="'+str(newnodes[0][2])+'" isPushBackRoute="0" name="" />\n')
 		
-		xml.append('\t<arc begin="'+str(nodes[1][2])+'" end="'+str(nodes[2][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[2][2])+'" end="'+str(nodes[1][2])+'" isPushBackRoute="0" name="" />\n')
-		
-		xml.append('\t<arc begin="'+str(nodes[0][2])+'" end="'+str(nodes[11][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[11][2])+'" end="'+str(nodes[0][2])+'" isPushBackRoute="0" name="" />\n')
-		
-		xml.append('\t<arc begin="'+str(nodes[11][2])+'" end="'+str(nodes[10][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[10][2])+'" end="'+str(nodes[11][2])+'" isPushBackRoute="0" name="" />\n')
-		
-		xml.append('\t<arc begin="'+str(nodes[10][2])+'" end="'+str(subnodes[0][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(subnodes[0][2])+'" end="'+str(nodes[10][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[1][2])+'" end="'+str(newnodes[2][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[2][2])+'" end="'+str(newnodes[1][2])+'" isPushBackRoute="0" name="" />\n')
+				
+		xml.append('\t<arc begin="'+str(newnodes[2][2])+'" end="'+str(subnodes[0][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(subnodes[0][2])+'" end="'+str(newnodes[2][2])+'" isPushBackRoute="0" name="" />\n')
 		
 		pp=0
 		for s  in subnodes:
@@ -576,28 +581,25 @@ class Parser(multiprocessing.Process):
 		
 		
 		
-		xml.append('\t<arc begin="'+str(nodes[9][2])+'" end="'+str(subnodes[-1][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(subnodes[-1][2])+'" end="'+str(nodes[9][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[3][2])+'" end="'+str(subnodes[-1][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(subnodes[-1][2])+'" end="'+str(newnodes[3][2])+'" isPushBackRoute="0" name="" />\n')
+				
+		xml.append('\t<arc begin="'+str(newnodes[3][2])+'" end="'+str(newnodes[4][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[4][2])+'" end="'+str(newnodes[3][2])+'" isPushBackRoute="0" name="" />\n')
 		
-		xml.append('\t<arc begin="'+str(nodes[10][2])+'" end="'+str(nodes[3][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[3][2])+'" end="'+str(nodes[10][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[4][2])+'" end="'+str(newnodes[5][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[5][2])+'" end="'+str(newnodes[4][2])+'" isPushBackRoute="0" name="" />\n')
 		
-		xml.append('\t<arc begin="'+str(nodes[3][2])+'" end="'+str(nodes[4][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[4][2])+'" end="'+str(nodes[3][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[6][2])+'" end="'+str(newnodes[5][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[5][2])+'" end="'+str(newnodes[6][2])+'" isPushBackRoute="0" name="" />\n')
 		
-		xml.append('\t<arc begin="'+str(nodes[4][2])+'" end="'+str(nodes[5][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[5][2])+'" end="'+str(nodes[4][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[3][2])+'" end="'+str(newnodes[7][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[7][2])+'" end="'+str(newnodes[3][2])+'" isPushBackRoute="0" name="" />\n')
 		
-		xml.append('\t<arc begin="'+str(nodes[6][2])+'" end="'+str(nodes[9][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[9][2])+'" end="'+str(nodes[6][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[7][2])+'" end="'+str(newnodes[8][2])+'" isPushBackRoute="0" name="" />\n')
+		xml.append('\t<arc begin="'+str(newnodes[8][2])+'" end="'+str(newnodes[7][2])+'" isPushBackRoute="0" name="" />\n')
 		
-		xml.append('\t<arc begin="'+str(nodes[6][2])+'" end="'+str(nodes[7][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[7][2])+'" end="'+str(nodes[6][2])+'" isPushBackRoute="0" name="" />\n')
-		
-		xml.append('\t<arc begin="'+str(nodes[7][2])+'" end="'+str(nodes[8][2])+'" isPushBackRoute="0" name="" />\n')
-		xml.append('\t<arc begin="'+str(nodes[8][2])+'" end="'+str(nodes[7][2])+'" isPushBackRoute="0" name="" />\n')
-		
-		
+
 		
 		xml.append('</TaxiWaySegments>\n</groundnet>\n')
 		
@@ -628,7 +630,19 @@ class Parser(multiprocessing.Process):
 		fw.write(buf)
 		fw.close()
 		
-		
+	
+	def find_midpoint(self,lat1,lat2,lon1,lon2,index):
+		if lon1>lon2:
+			lon=(lon1-lon2)/2 + lon2
+		else:
+			lon=(lon2-lon1)/2 + lon1
+		if lat1>lat2:
+			lat=(lat1-lat2)/2 + lat2
+		else:
+			lat=(lat2-lat1)/2 + lat1
+		return (lat,lon,index)
+
+
 	def gen_parking(self,lat,lon,index,heading):
 		coord=self.convert_coord(lat,lon)
 		buf='''
@@ -676,16 +690,20 @@ if __name__ == "__main__":
 		print 'Usage: groundnet.py all | airport <ICAO>'
 		sys.exit()
 	else:
-		parser=Groundnet()
 		if sys.argv[1]=='airport':
 			if len(sys.argv) <3:
 				print 'Usage: groundnet.py airport <ICAO>'
 				sys.exit()
+			elif len(sys.argv) == 4 and sys.argv[3]== '850':
+				apt=sys.argv[2]
+				parser=Groundnet(850)
+				parser.parse_airport(apt)
 			else:
 				apt=sys.argv[2]
+				parser=Groundnet()
 				parser.parse_airport(apt)
 		elif sys.argv[1]=='all':
-			if len(sys.argv) == 3:
+			if len(sys.argv) == 3 and sys.argv[2]== '850':
 				parser=Groundnet(850)
 			parser.parse_all()
 		else:

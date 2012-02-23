@@ -25,11 +25,25 @@ __doc__="""Experimental script to generate a ground network for default airports
 Works on all airports which have the following 810 format: one runway,
 one long taxiway along the runway, 3 short taxiways to the ends and the center
 of the runway. 9 parking positions are also generated near the long taxiway.
+
 First set path below to Airports directory inside the scenery directory.
 Ground networks will be saved in the output directory inside the current directory
 
-Usage: groundnet.py all -> generates all airports which fit the criteria
+After the first run, a cache file named airport_list.txt or airport_list_850.txt
+is created in the working directory, containing a list of all airports in the scenery
+directory which are missing a ground network, regardless of the format of the airport.
+This makes further runs of the script execute faster.
+
+Version 0.2: The script now can parse v850 airports which fit the same default
+format. To use the 850 parser you need a apt850.dat file in the working directory.
+Ground networks will be saved in the output850 directory inside the current directory
+
+Usage:
+groundnet.py all -> generates all airports which fit the criteria
 groundnet.py airport <ICAO> -> generates only one airport for the ICAO code provided
+
+groundnet.py all 850 -> generates all airports from apt850.dat which fit the criteria
+groundnet.py airport <ICAO> 850 -> generates only one airport for the ICAO code provided
 """
 
 class Groundnet:
@@ -704,12 +718,12 @@ class Parser(multiprocessing.Process):
 
 if __name__ == "__main__":
 	if len(sys.argv) <2:
-		print 'Usage: groundnet.py all | airport <ICAO>'
+		print 'Usage: groundnet.py all | airport <ICAO> [850]'
 		sys.exit()
 	else:
 		if sys.argv[1]=='airport':
 			if len(sys.argv) <3:
-				print 'Usage: groundnet.py airport <ICAO>'
+				print 'Usage: groundnet.py airport <ICAO> [850]'
 				sys.exit()
 			elif len(sys.argv) == 4 and sys.argv[3]== '850':
 				apt=sys.argv[2]
@@ -726,5 +740,5 @@ if __name__ == "__main__":
 				parser=Groundnet()
 			parser.parse_all()
 		else:
-			print 'Usage: groundnet.py all | airport <ICAO>'
+			print 'Usage: groundnet.py all | airport <ICAO> [850]'
 			sys.exit()

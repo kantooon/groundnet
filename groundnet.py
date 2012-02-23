@@ -39,6 +39,7 @@ class Groundnet:
 		self.park_spacing=60  # space in meters between centers of parking positions
 		self.park_distance=50 # space in meters between taxiway and parking pos. 
 		self.default_airports=[]
+		self.apt_index=[]
 		self.missing_network=[]
 		self.done_files=[]
 		self.version=version
@@ -53,17 +54,22 @@ class Groundnet:
 		
 		
 	def get_airport_list(self):
+		if self.version==850:
+			airport_list='airport_list_850.txt'
+		else:
+			airport_list='airport_list.txt'
+			
 		try:
-			os.stat(os.path.join(os.getcwd(),'airport_list.txt'))
+			os.stat(os.path.join(os.getcwd(),airport_list))
 		except:
 			os.path.walk(self.scenery_airports,self.check_groundnet,None)
-			fw=open(os.path.join(os.getcwd(),'airport_list.txt'),'wb')
+			fw=open(os.path.join(os.getcwd(),airport_list),'wb')
 			buf="\n".join(self.missing_network)
 			fw.write(buf)
 			fw.close()
 			return
 		
-		fr=open(os.path.join(os.getcwd(),'airport_list.txt'))
+		fr=open(os.path.join(os.getcwd(),airport_list))
 		content=fr.readlines()
 		for line in content:
 			self.missing_network.append(line.rstrip('\n'))
@@ -78,11 +84,12 @@ class Groundnet:
 		q=multiprocessing.Queue(10)
 		for a in self.apts:
 			hh+=1
-			print a, len(self.apts) - hh
+			print a, len(self.apts) - hh,"left"
 			#self.parse_airport( a)
-			
+			index=dict(self.apt_index)
+			content=self.apt_content[index[a]-1:index[a]+40]
 			q.put(hh)	
-			pthread=Parser(a,self.save_tree,self.park_spacing,self.park_distance,self.apt_content,q,hh)
+			pthread=Parser(a,self.save_tree,self.park_spacing,self.park_distance,content,self.version,q,hh)
 			pthread.start()
 			
 			
@@ -106,7 +113,7 @@ class Groundnet:
 				num_segs=0
 				seg_len=[]
 				for k in range(i+1,i+10):
-					if content[k]=='\n':
+					if content[k]=='\n' or content[k]=='\r\n':
 						break
 					if re.search("^10\s+.*?xxx\s+",content[k])!=None:
 						data=content[k].split()
@@ -118,6 +125,7 @@ class Groundnet:
 						if match!=None:
 							if match.group(1) not in self.default_airports:
 								self.default_airports.append(match.group(1))
+								self.apt_index.append((match.group(1),i))
 			i+=1
 			
 	
@@ -135,7 +143,7 @@ class Groundnet:
 				num_holds=0
 				seg_len=[]
 				for k in range(i+1,i+40):
-					if content[k]=='\n':
+					if content[k]=='\n' or content[k]=='\r\n':
 						break
 					if re.search("^110\s+",content[k])!=None:
 						num_taxiways +=1
@@ -153,6 +161,7 @@ class Groundnet:
 					if match!=None:
 						if match.group(1) not in self.default_airports:
 							self.default_airports.append(match.group(1))
+							self.apt_index.append((match.group(1),i))
 			i+=1
 		
 		

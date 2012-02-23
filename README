@@ -3,7 +3,7 @@ Works on all airports which have the following 810 format: one runway,
 one long taxiway along the runway, 3 short taxiways to the ends and the center
 of the runway. 9 parking positions are also generated near the long taxiway.
 
-First set path below to the Airports directory inside the scenery directory.
+First set path in the script to the Airports directory inside the scenery directory.
 This can be obtained with Terrasync.
 Ground networks will be saved in the output directory inside the current directory
 

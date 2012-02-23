@@ -1,0 +1,2 @@
+This directory will contain ground networks generated for v810 apt.dat 
+If save_tree is set to True, the files will be located under Airports
